@@ -35,10 +35,53 @@ def _get_list(name: str, default: list[str]) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _resolve_str(name: str, inline_value: str | None = None, default: str = "") -> str:
+    if inline_value is not None:
+        return inline_value
+    return _get_env(name, default)
+
+
+def _resolve_int(name: str, inline_value: int | None = None, default: int = 0) -> int:
+    if inline_value is not None:
+        return inline_value
+    return _get_int(name, default)
+
+
+def _resolve_bool(name: str, inline_value: bool | None = None, default: bool = False) -> bool:
+    if inline_value is not None:
+        return inline_value
+    return _get_bool(name, default)
+
+
+def _resolve_list(name: str, inline_value: list[str] | None = None, default: list[str] | None = None) -> list[str]:
+    if inline_value is not None:
+        return inline_value
+    return _get_list(name, default or [])
+
+
 def require_setting(name: str, value: str) -> str:
     if value.strip():
         return value
     raise RuntimeError(f"{name} is not configured")
+
+
+# Direct runtime overrides.
+# Fill these values in this file when you want to manage deployment settings here.
+# Leave a setting as None to fall back to the external environment.
+INLINE_VLLM_EMBED_URL: str | None = None
+INLINE_VLLM_SUMMARIZE_URL: str | None = None
+INLINE_VLLM_QA_URL: str | None = None
+INLINE_DATABASE_DSN: str | None = None
+INLINE_REDIS_URL: str | None = None
+INLINE_CELERY_BROKER_URL: str | None = None
+INLINE_CELERY_RESULT_BACKEND: str | None = None
+INLINE_SMTP_HOST: str | None = None
+INLINE_SMTP_PORT: int | None = None
+INLINE_SMTP_USERNAME: str | None = None
+INLINE_SMTP_PASSWORD: str | None = None
+INLINE_SMTP_FROM_ADDR: str | None = None
+INLINE_SMTP_TO_ADDRS: list[str] | None = None
+INLINE_SMTP_USE_STARTTLS: bool | None = None
 
 
 EMBEDDING_DIMENSION: Final[int] = 1024
@@ -46,9 +89,9 @@ EMBED_MODEL: Final[str] = _get_env("EMBED_MODEL", "bge-m3")
 SUMMARIZE_MODEL: Final[str] = _get_env("SUMMARIZE_MODEL", "Qwen2.5-7B-Instruct")
 QA_MODEL: Final[str] = _get_env("QA_MODEL", "Qwen2.5-14B-Instruct")
 
-VLLM_EMBED_URL: Final[str] = _get_env("VLLM_EMBED_URL")
-VLLM_SUMMARIZE_URL: Final[str] = _get_env("VLLM_SUMMARIZE_URL")
-VLLM_QA_URL: Final[str] = _get_env("VLLM_QA_URL")
+VLLM_EMBED_URL: Final[str] = _resolve_str("VLLM_EMBED_URL", INLINE_VLLM_EMBED_URL)
+VLLM_SUMMARIZE_URL: Final[str] = _resolve_str("VLLM_SUMMARIZE_URL", INLINE_VLLM_SUMMARIZE_URL)
+VLLM_QA_URL: Final[str] = _resolve_str("VLLM_QA_URL", INLINE_VLLM_QA_URL)
 
 PRIMARY_CLASSIFICATION_THRESHOLD: Final[float] = _get_float("PRIMARY_CLASSIFICATION_THRESHOLD", 0.72)
 MULTI_TAG_THRESHOLD: Final[float] = _get_float("MULTI_TAG_THRESHOLD", 0.60)
@@ -76,23 +119,27 @@ HOT_TOPICS_DAYS: Final[int] = _get_int("HOT_TOPICS_DAYS", 7)
 HOT_TOPICS_TOP_N: Final[int] = _get_int("HOT_TOPICS_TOP_N", 8)
 RSS_INGEST_INTERVAL_MINUTES: Final[int] = _get_int("RSS_INGEST_INTERVAL_MINUTES", 30)
 
-DATABASE_DSN: Final[str] = _get_env("DATABASE_DSN")
-REDIS_URL: Final[str] = _get_env("REDIS_URL")
+DATABASE_DSN: Final[str] = _resolve_str("DATABASE_DSN", INLINE_DATABASE_DSN)
+REDIS_URL: Final[str] = _resolve_str("REDIS_URL", INLINE_REDIS_URL)
 REDIS_EMBED_TTL_SECONDS: Final[int] = _get_int("REDIS_EMBED_TTL_SECONDS", 3600)
 REDIS_RAG_TTL_SECONDS: Final[int] = _get_int("REDIS_RAG_TTL_SECONDS", 900)
 
-CELERY_BROKER_URL: Final[str] = _get_env("CELERY_BROKER_URL", REDIS_URL)
-CELERY_RESULT_BACKEND: Final[str] = _get_env("CELERY_RESULT_BACKEND", REDIS_URL)
+CELERY_BROKER_URL: Final[str] = _resolve_str("CELERY_BROKER_URL", INLINE_CELERY_BROKER_URL, REDIS_URL)
+CELERY_RESULT_BACKEND: Final[str] = _resolve_str(
+    "CELERY_RESULT_BACKEND",
+    INLINE_CELERY_RESULT_BACKEND,
+    REDIS_URL,
+)
 CELERY_TASK_ALWAYS_EAGER: Final[bool] = _get_bool("CELERY_TASK_ALWAYS_EAGER", False)
 
 EMAIL_CONFIG: Final[dict[str, object]] = {
-    "smtp_host": _get_env("SMTP_HOST"),
-    "smtp_port": _get_int("SMTP_PORT", 587),
-    "username": _get_env("SMTP_USERNAME", ""),
-    "password": _get_env("SMTP_PASSWORD", ""),
-    "from_addr": _get_env("SMTP_FROM_ADDR"),
-    "to_addrs": _get_list("SMTP_TO_ADDRS", []),
-    "use_starttls": _get_bool("SMTP_USE_STARTTLS", True),
+    "smtp_host": _resolve_str("SMTP_HOST", INLINE_SMTP_HOST),
+    "smtp_port": _resolve_int("SMTP_PORT", INLINE_SMTP_PORT, 587),
+    "username": _resolve_str("SMTP_USERNAME", INLINE_SMTP_USERNAME, ""),
+    "password": _resolve_str("SMTP_PASSWORD", INLINE_SMTP_PASSWORD, ""),
+    "from_addr": _resolve_str("SMTP_FROM_ADDR", INLINE_SMTP_FROM_ADDR),
+    "to_addrs": _resolve_list("SMTP_TO_ADDRS", INLINE_SMTP_TO_ADDRS, []),
+    "use_starttls": _resolve_bool("SMTP_USE_STARTTLS", INLINE_SMTP_USE_STARTTLS, True),
 }
 
 SCHEDULER_TIMEZONE: Final[str] = _get_env("SCHEDULER_TIMEZONE", "Asia/Shanghai")
