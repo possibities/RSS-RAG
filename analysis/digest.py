@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import numpy as np
 from sklearn.cluster import KMeans
@@ -62,6 +64,13 @@ def cluster_articles(articles: list[dict[str, object]], k: int = 5) -> list[dict
     return sorted(representatives, key=lambda item: item["cluster_size"], reverse=True)
 
 
+async def _cluster_articles_async(
+    articles: list[dict[str, object]],
+    k: int,
+) -> list[dict[str, object]]:
+    return await asyncio.to_thread(cluster_articles, articles, k)
+
+
 async def generate_daily_digest(
     category_name: str,
     category_id: str,
@@ -79,7 +88,7 @@ async def generate_daily_digest(
         }
 
     k = min(5, max(1, len(articles) // 3))
-    representatives = cluster_articles(articles, k=k)
+    representatives = await _cluster_articles_async(articles, k=k)
     articles_text = "\n\n".join(
         f"{index + 1}. {article['title']}\n{article.get('summary') or ''}"
         for index, article in enumerate(representatives)

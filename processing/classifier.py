@@ -13,6 +13,7 @@ async def classify_article(article_embedding: list[float], db) -> dict[str, obje
         SELECT id, name, 1 - (embedding <=> $1) AS score
         FROM categories
         WHERE parent_id IS NULL
+          AND embedding IS NOT NULL
         ORDER BY score DESC
         LIMIT 5
         """,
@@ -40,6 +41,7 @@ async def classify_article(article_embedding: list[float], db) -> dict[str, obje
             SELECT id, name, 1 - (embedding <=> $1) AS score
             FROM categories
             WHERE parent_id = $2
+              AND embedding IS NOT NULL
             ORDER BY score DESC
             LIMIT 3
             """,

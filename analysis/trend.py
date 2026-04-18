@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import numpy as np
 
@@ -34,6 +36,10 @@ def compute_centroid(embeddings: np.ndarray) -> np.ndarray:
     return embeddings.mean(axis=0)
 
 
+async def _compute_centroid_async(embeddings: np.ndarray) -> np.ndarray:
+    return await asyncio.to_thread(compute_centroid, embeddings)
+
+
 async def weekly_trend_report(category_name: str, category_id: str, db) -> dict[str, object]:
     qa_url = require_setting("VLLM_QA_URL", VLLM_QA_URL)
     this_week_embeddings = await get_week_embeddings(category_id, days_start=7, days_end=0, db=db)
@@ -42,9 +48,9 @@ async def weekly_trend_report(category_name: str, category_id: str, db) -> dict[
     if this_week_embeddings is None:
         return {"category": category_name, "report": "本周暂无数据。", "hot_articles": []}
 
-    this_centroid = compute_centroid(this_week_embeddings)
+    this_centroid = await _compute_centroid_async(this_week_embeddings)
     if last_week_embeddings is not None:
-        last_centroid = compute_centroid(last_week_embeddings)
+        last_centroid = await _compute_centroid_async(last_week_embeddings)
         trend_vector = this_centroid - last_centroid
         has_comparison = True
     else:
@@ -57,6 +63,7 @@ async def weekly_trend_report(category_name: str, category_id: str, db) -> dict[
         SELECT title, url, summary, publish_time
         FROM articles
         WHERE category_id = $1
+          AND embedding IS NOT NULL
           AND publish_time > NOW() - make_interval(days => $3)
         ORDER BY embedding <=> $2
         LIMIT 5
@@ -76,6 +83,7 @@ async def weekly_trend_report(category_name: str, category_id: str, db) -> dict[
                    1 - (embedding <=> $2) AS this_week_sim
             FROM articles
             WHERE category_id = $3
+              AND embedding IS NOT NULL
               AND publish_time > NOW() - make_interval(days => $4)
             ORDER BY (1 - (embedding <=> $1)) - (1 - (embedding <=> $2)) DESC
             LIMIT 3

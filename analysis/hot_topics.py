@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 import numpy as np
 from sklearn.cluster import KMeans
@@ -7,34 +9,25 @@ from sklearn.cluster import KMeans
 from config import HOT_TOPICS_TOP_N, QA_MODEL, QA_TIMEOUT_SECONDS, VLLM_QA_URL, require_setting
 
 
-async def extract_hot_topics(db, top_n: int = HOT_TOPICS_TOP_N, days: int = 7) -> list[dict[str, object]]:
-    rows = await db.fetch(
-        """
-        SELECT a.id, a.title, a.summary, a.url, a.embedding, c.name AS category_name
-        FROM articles a
-        LEFT JOIN categories c ON a.category_id = c.id
-        WHERE a.publish_time > NOW() - make_interval(days => $1)
-          AND a.embedding IS NOT NULL
-        """,
-        days,
-    )
-
-    if not rows:
+def cluster_hot_topics(
+    articles: list[dict[str, object]],
+    top_n: int = HOT_TOPICS_TOP_N,
+) -> list[dict[str, object]]:
+    if not articles:
         return []
 
-    if len(rows) < top_n:
+    if len(articles) < top_n:
         return [
             {
-                "title": row["title"],
-                "url": row["url"],
-                "category": row["category_name"] or "未分类",
+                "title": article["title"],
+                "url": article["url"],
+                "category": article.get("category_name") or "未分类",
                 "article_count": 1,
-                "summary": row["summary"] or "",
+                "summary": article.get("summary") or "",
             }
-            for row in rows
+            for article in articles
         ]
 
-    articles = [dict(row) for row in rows]
     embeddings = np.array([article["embedding"] for article in articles], dtype=float)
     cluster_count = min(top_n, max(3, len(articles) // 5))
     kmeans = KMeans(n_clusters=cluster_count, random_state=42, n_init=10)
@@ -60,6 +53,32 @@ async def extract_hot_topics(db, top_n: int = HOT_TOPICS_TOP_N, days: int = 7) -
         )
 
     return sorted(topics, key=lambda item: item["article_count"], reverse=True)
+
+
+async def _cluster_hot_topics_async(
+    articles: list[dict[str, object]],
+    top_n: int,
+) -> list[dict[str, object]]:
+    return await asyncio.to_thread(cluster_hot_topics, articles, top_n)
+
+
+async def extract_hot_topics(db, top_n: int = HOT_TOPICS_TOP_N, days: int = 7) -> list[dict[str, object]]:
+    rows = await db.fetch(
+        """
+        SELECT a.id, a.title, a.summary, a.url, a.embedding, c.name AS category_name
+        FROM articles a
+        LEFT JOIN categories c ON a.category_id = c.id
+        WHERE a.publish_time > NOW() - make_interval(days => $1)
+          AND a.embedding IS NOT NULL
+        """,
+        days,
+    )
+
+    if not rows:
+        return []
+
+    articles = [dict(row) for row in rows]
+    return await _cluster_hot_topics_async(articles, top_n)
 
 
 async def generate_hot_topics_report(db, days: int = 7) -> str:
